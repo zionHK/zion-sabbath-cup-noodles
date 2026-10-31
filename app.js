@@ -476,6 +476,7 @@ async function confirmOrder() {
 
   const isGuest = (!userEmail || userEmail === "" || userEmail.indexOf("@") === -1);
   const isFoodieLimited = (userRole === "我只是來吃吃的");
+  const isLimited = isGuest || (userRole === "我只是來吃吃的");
 
   if (isGuest && total > 3) {
     await appAlert("未登入訪客單次預訂不可超過 3 杯！\n若需訂購 3 杯以上，請使用上方 Google 帳號按鈕登入後再登記。", "預訂限制提示");
@@ -486,6 +487,15 @@ async function confirmOrder() {
     await appAlert("您的身分為「我只是來吃吃的」，單次預訂上限為 3 杯！\n若需無限制訂購，請聯絡管理員將您的身分調整為「我只是來大吃的」。", "預訂限制提示");
     return;
   }
+  // 未登入訪客或「我只是來吃吃的」：上限 3 杯
+  if (isLimited && total > 3) {
+    await appAlert(
+      "⚠️ 預訂限制提示：\n未登入訪客或「我只是來吃吃的」單次預訂不可超過 3 杯！\n若需無限制訂購，請點擊右上角 Google 登入升級為「大吃」。",
+      "預訂限制"
+    );
+    return;
+  }
+  // 登入為「我只是來大吃的」/ System / Admin / 核對員：直接放行無限制
 
   const ok = await appConfirm(`確認提交預訂共 ${total} 杯？`, "確認預訂");
   if (ok) {
