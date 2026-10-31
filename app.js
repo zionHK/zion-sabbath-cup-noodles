@@ -3,6 +3,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycbymW1267l6UWmdVElFgupFm
 
 let idToken = localStorage.getItem("cup_noodle_id_token") || "";
 let userEmail = localStorage.getItem("cup_noodle_user_email") || "";
+// 第 6 行：未登入時預設為「我只是來吃吃的」
 let userRole = localStorage.getItem("cup_noodle_user_role") || "我只是來吃吃的";
 
 let currentActiveSheetName = "";
@@ -113,24 +114,29 @@ async function apiRequest(path = "", options = {}) {
 }
 window.apiRequest = apiRequest;
 
+// 第 95 行開始替換：renderUserStatus
 function renderUserStatus() {
   const textEl = document.getElementById("userStatusText");
   const gisBox = document.getElementById("gisButtonBox");
   const btnLogout = document.getElementById("btnLogout");
 
   if (userEmail && userEmail.indexOf("@") > -1) {
-    // 登入後：預設為「我只是來大吃的 (無限額)」或管理員
+    // 核心修正：只要是已登入狀態，非管理員一律保證為「我只是來大吃的」
+    if (!userRole || userRole === "我只是來吃吃的") {
+      userRole = "我只是來大吃的";
+      localStorage.setItem("cup_noodle_user_role", userRole);
+    }
+
     let roleBadge = userRole;
     if (userRole === "我只是來大吃的") {
       roleBadge = "我只是來大吃的 (無限額)";
-    } else if (userRole === "我只是來吃吃的") {
-      roleBadge = "我只是來吃吃的 (限購3杯)";
     }
     textEl.innerText = `已登入：${userEmail} | 權限：${roleBadge}`;
     gisBox.style.display = "none";
     btnLogout.style.display = "inline-block";
   } else {
-    // 未登入：訪客身分為「我只是來吃吃的」
+    // 未登入訪客
+    userRole = "我只是來吃吃的";
     textEl.innerText = "未登入訪客 (我只是來吃吃的，限購 3 杯)";
     gisBox.style.display = "inline-block";
     btnLogout.style.display = "none";
@@ -163,6 +169,7 @@ function parseJwt(token) {
   ));
 }
 
+// 登入回調函式：登入成功當下立即解鎖大吃權限
 async function handleCredentialResponse(response) {
   try {
     idToken = response.credential;
@@ -171,7 +178,12 @@ async function handleCredentialResponse(response) {
     userEmail = profile.email || "";
     localStorage.setItem("cup_noodle_user_email", userEmail);
 
+    // 登入後強制提升為「我只是來大吃的」
+    userRole = "我只是來大吃的";
+    localStorage.setItem("cup_noodle_user_role", userRole);
+
     renderUserStatus();
+
     await loadProducts(currentActiveSheetName || null, currentActiveWeek || null);
     renderUserStatus();
     setupPermissions();
@@ -179,7 +191,7 @@ async function handleCredentialResponse(response) {
     appAlert("登入處理失敗：" + err.message, "登入錯誤");
   }
 }
-
+// 登出函式：登出後重置為「我只是來吃吃的」
 async function logoutUser() {
   const ok = await appConfirm("確定要登出 Google 帳號嗎？", "帳號登出");
   if (ok) {
