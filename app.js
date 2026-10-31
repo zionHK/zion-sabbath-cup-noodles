@@ -119,19 +119,40 @@ function renderUserStatus() {
   const btnLogout = document.getElementById("btnLogout");
 
   if (userEmail && userEmail.indexOf("@") > -1) {
+    // 登入後：預設為「我只是來大吃的 (無限額)」或管理員
     let roleBadge = userRole;
-    if (userRole === "我只是來大吃的") roleBadge = "我只是來大吃的 (無限額)";
-    else if (userRole === "我只是來吃吃的") roleBadge = "我只是來吃吃的 (限購3杯)";
+    if (userRole === "我只是來大吃的") {
+      roleBadge = "我只是來大吃的 (無限額)";
+    } else if (userRole === "我只是來吃吃的") {
+      roleBadge = "我只是來吃吃的 (限購3杯)";
+    }
     textEl.innerText = `已登入：${userEmail} | 權限：${roleBadge}`;
     gisBox.style.display = "none";
     btnLogout.style.display = "inline-block";
   } else {
-    textEl.innerText = "未登入訪客 (限購 3 杯)";
+    // 未登入：訪客身分為「我只是來吃吃的」
+    textEl.innerText = "未登入訪客 (我只是來吃吃的，限購 3 杯)";
     gisBox.style.display = "inline-block";
     btnLogout.style.display = "none";
   }
 }
 
+function initGoogleGIS() {
+  if (!window.google?.accounts?.id) return;
+  google.accounts.id.initialize({
+    client_id: GOOGLE_CLIENT_ID,
+    callback: handleCredentialResponse,
+    auto_select: true
+  });
+
+  const topBtnBox = document.getElementById("gisButtonBox");
+  if (topBtnBox) {
+    google.accounts.id.renderButton(
+      topBtnBox,
+      { type: "standard", theme: "outline", size: "medium", text: "signin_with" }
+    );
+  }
+}
 function parseJwt(token) {
   const payload = token.split(".")[1];
   if (!payload) throw new Error("無效的 Token 格式。");
