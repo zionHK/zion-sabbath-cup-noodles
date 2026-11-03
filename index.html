@@ -88,11 +88,14 @@
 
   <!-- TAB 2: 報名數目 -->
   <div class="tab-content" id="tab2">
-    <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
       <select id="viewTypeDropdown" onchange="loadTab2Data()">
         <option value="week">每週記錄</option>
         <option value="month">當月累計總額</option>
       </select>
+      <button class="auth-btn" id="btnOpenAddModal" onclick="openAddProductModal()" style="background:#1565c0; color:#fff; border:none; padding:6px 14px; display:none;">
+        ➕ 新增產品項目
+      </button>
     </div>
     <table class="report-table">
       <thead>
