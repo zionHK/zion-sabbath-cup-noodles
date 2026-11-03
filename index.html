@@ -182,6 +182,57 @@
   </div>
 
   <!-- 商品詳情 POPUP (點擊品名展示) -->
+  <!-- 使用者個人名片彈窗 -->
+  <div class="modal-overlay" id="userProfileModal">
+    <div class="modal-box" style="padding: 24px 20px; max-width: 330px;">
+      <div style="position: relative; display: inline-block; margin-bottom: 12px;">
+        <img id="profileModalAvatar" src="" alt="Google Avatar" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; box-shadow: 0 4px 10px rgba(0,0,0,0.12);">
+      </div>
+      
+      <div style="display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 6px;">
+        <h4 id="profileModalName" style="font-size: 17px; font-weight: bold; color: #222;"></h4>
+        <span onclick="editUserNicknamePrompt()" style="cursor: pointer; font-size: 15px;" title="點擊修改暱稱">✏️</span>
+      </div>
+
+      <div style="margin-bottom: 12px;">
+        <span id="profileModalRoleBadge" class="user-role-badge" onclick="openRoleGuideFromProfile()" style="font-size: 12px; padding: 3px 10px;"></span>
+      </div>
+
+      <p id="profileModalEmail" style="font-size: 12px; color: #777; margin-bottom: 16px; word-break: break-all;"></p>
+
+      <div class="modal-actions">
+        <button class="btn-confirm" onclick="closeModal('userProfileModal')" style="width: 100%;">關閉名片</button>
+      </div>
+    </div>
+  </div>
+   <!-- QR 取餐訂單智能核銷確認彈窗 -->
+  <div class="modal-overlay" id="orderDeductModal">
+    <div class="modal-box" style="max-width: 380px; text-align: left; padding: 22px 18px;">
+      <h4 style="font-size: 16px; margin-bottom: 4px; text-align: center; color: #1565c0;">📦 訂單取餐核銷確認</h4>
+      <p id="deductModalTime" style="font-size: 12px; color: #666; margin-bottom: 10px; text-align: center;"></p>
+      
+      <div style="max-height: 220px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; margin-bottom: 12px;">
+        <table class="report-table" style="font-size: 12px;">
+          <thead>
+            <tr>
+              <th style="text-align:left;">商品品項</th>
+              <th style="width: 50px;">取餐數</th>
+            </tr>
+          </thead>
+          <tbody id="deductModalList"></tbody>
+        </table>
+      </div>
+
+      <p style="font-size: 11px; color: #d32f2f; line-height: 1.4; margin-bottom: 12px;">
+        ⚠️ 確認後系統將自動自本週最新剩餘中扣除上述品項數量，並同步記錄於 Log。
+      </p>
+
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeModal('orderDeductModal')">取消</button>
+        <button class="btn-confirm" id="btnConfirmDeduct" onclick="executeOrderDeduct()">確認一鍵扣減</button>
+      </div>
+    </div>
+  </div>
   <div class="modal-overlay" id="prodDetailModal">
     <div class="modal-box">
       <img id="detailModalImg" src="" alt="商品圖片" style="width:120px; height:120px; object-fit:contain; margin-bottom:8px;">
