@@ -585,7 +585,6 @@ async function loadTab2Data() {
           <td>${totals.curRemain}</td>
         </tr>`;
     } else {
-      // 若全表確實皆無數據，明確顯示無數據提示，而非顯示偽造的 0
       tbody.innerHTML = '<tr><td colspan="4" style="padding:28px; color:#888; font-weight:500;">查無任何庫存與報名數據（歷史記錄皆為 0）</td></tr>';
       tfoot.innerHTML = `
         <tr style="font-weight:bold; background:#fafafa; color:#999;">
