@@ -98,7 +98,7 @@
       <thead>
         <tr>
           <th>產品名稱</th>
-          <th>上週剩餘</th>
+          <th>最近剩餘</th>
           <th id="thRegHeader">本週報名</th>
           <th>現時剩餘</th>
         </tr>
@@ -116,7 +116,7 @@
     </div>
     <div id="scannerWrapper">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-        <span style="font-weight: bold; font-size: 13px;" id="scannerStatusText">微距對焦掃描中...</span>
+        <span style="font-weight: bold; font-size: 13px;" id="scannerStatusText">對焦掃描中...</span>
         <button style="padding: 4px 8px; border: 1px solid #ccc; background:#fff; border-radius:4px; cursor:pointer;" onclick="stopScanner()">✕ 關閉相機</button>
       </div>
       <video id="readerVideo" autoplay playsinline muted></video>
@@ -127,7 +127,7 @@
       <thead>
         <tr>
           <th>產品名稱</th>
-          <th>上次/最近剩餘</th>
+          <th>最近剩餘</th>
           <th>最新剩餘 (點擊修改)</th>
         </tr>
       </thead>
@@ -135,7 +135,7 @@
       <tfoot id="tab3Foot"></tfoot>
     </table>
     <div class="fixed-footer" style="justify-content: center;">
-      <button class="btn-submit" id="btnScanCode" onclick="startScanner()">📷 微距掃描條碼 Scan Code</button>
+      <button class="btn-submit" id="btnScanCode" onclick="startScanner()">📷 掃描條碼 Scan Code</button>
     </div>
   </div>
 
