@@ -109,9 +109,9 @@ async function apiRequest(path = "", options = {}) {
     };
   }
 
-  // 12 秒 Timeout 控制
+  // 25 秒 Timeout 控制 (為 Apps Script 容器冷啟動預留充足反應時間)
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 12000);
+  const timeoutId = setTimeout(() => controller.abort(), 25000);
   fetchOptions.signal = controller.signal;
 
   try {
@@ -124,7 +124,7 @@ async function apiRequest(path = "", options = {}) {
   } catch (err) {
     clearTimeout(timeoutId);
     if (err.name === "AbortError") {
-      throw new Error("伺服器連線超時（超過 12 秒無回應），請檢查網路或稍後重試。");
+      throw new Error("伺服器連線超時（超過 25 秒無回應），請檢查網路或稍後重試。");
     }
     throw err;
   }
