@@ -85,6 +85,7 @@ function appConfirm(message, title = "操作確認") {
   });
 }
 
+// 加入 12 秒超時中斷保護，防止網路或伺服器卡死導致「一直載入中」
 async function apiRequest(path = "", options = {}) {
   const url = new URL(API_URL + path);
   let fetchOptions = { ...options };
@@ -108,9 +109,25 @@ async function apiRequest(path = "", options = {}) {
     };
   }
 
-  const response = await fetch(url.toString(), fetchOptions);
-  if (!response.ok) throw new Error(`API 請求失敗（HTTP ${response.status}）。`);
-  return response.json();
+  // 12 秒 Timeout 控制
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 12000);
+  fetchOptions.signal = controller.signal;
+
+  try {
+    const response = await fetch(url.toString(), fetchOptions);
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      throw new Error(`API 請求失敗（HTTP ${response.status}）`);
+    }
+    return await response.json();
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === "AbortError") {
+      throw new Error("伺服器連線超時（超過 12 秒無回應），請檢查網路或稍後重試。");
+    }
+    throw err;
+  }
 }
 window.apiRequest = apiRequest;
 
