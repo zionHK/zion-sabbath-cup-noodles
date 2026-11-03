@@ -250,11 +250,13 @@ function setupPermissions() {
   const isSystem = (userRole === "System");
   const isAdmin = (userRole === "Admin" || userRole === "管理員" || roleStr === "admin");
   const isAuditor = (userRole === "核對員");
-
+  const addBtn = document.getElementById("btnOpenAddModal");
+  if (addBtn) {
   if (btn1) btn1.style.display = "block";
   if (btn2) btn2.style.display = (isSystem || isAdmin) ? "block" : "none";
   if (btn3) btn3.style.display = (isSystem || isAdmin || isAuditor) ? "block" : "none";
-
+  addBtn.style.display = (isSystem || isAdmin) ? "inline-block" : "none";
+  
   if (isSystem || isAdmin) {
     if (sheetSel) sheetSel.style.display = "inline-block";
     if (sheetTxt) sheetTxt.style.display = "none";
@@ -953,3 +955,166 @@ window.addEventListener("DOMContentLoaded", () => {
   safeInitGIS();
   loadProducts(null, null);
 });
+
+  // --- 新增產品項目前端邏輯 ---
+
+let newProductBase64Image = "";
+
+// 開啟彈窗並自現有商品提取分類、品牌、產地建立選項
+function openAddProductModal() {
+  const cats = new Set();
+  const brands = new Set();
+  const origins = new Set();
+
+  products.forEach(p => {
+    if (p.category) cats.add(p.category.trim());
+    if (p.brand) brands.add(p.brand.trim());
+    if (p.origin) origins.add(p.origin.trim());
+  });
+
+  populateSelectOptions("newProdCategorySel", Array.from(cats), "請選擇分類...");
+  populateSelectOptions("newProdBrandSel", Array.from(brands), "請選擇品牌...");
+  populateSelectOptions("newProdOriginSel", Array.from(origins), "請選擇產地...");
+
+  // 重置表單欄位
+  document.getElementById("newProdCategoryCustom").style.display = "none";
+  document.getElementById("newProdCategoryCustom").value = "";
+  document.getElementById("newProdBrandCustom").style.display = "none";
+  document.getElementById("newProdBrandCustom").value = "";
+  document.getElementById("newProdOriginCustom").style.display = "none";
+  document.getElementById("newProdOriginCustom").value = "";
+  document.getElementById("newProdNameInput").value = "";
+  document.getElementById("newProdPriceInput").value = "10";
+  document.getElementById("newProdBarcodeInput").value = "";
+  document.getElementById("newProdImgFileInput").value = "";
+  document.getElementById("newProdImgPreviewBox").style.display = "none";
+  newProductBase64Image = "";
+
+  document.getElementById("addProductModal").style.display = "flex";
+}
+
+function populateSelectOptions(elId, list, placeholder) {
+  const sel = document.getElementById(elId);
+  sel.innerHTML = `<option value="">${placeholder}</option>`;
+  list.sort().forEach(item => {
+    sel.innerHTML += `<option value="${item}">${item}</option>`;
+  });
+  sel.innerHTML += `<option value="__other__" style="color:#1565c0; font-weight:bold;">➕ 其他 (自訂輸入)...</option>`;
+}
+
+function onCategorySelectChange() {
+  const sel = document.getElementById("newProdCategorySel");
+  const custom = document.getElementById("newProdCategoryCustom");
+  custom.style.display = (sel.value === "__other__") ? "block" : "none";
+}
+
+function onBrandSelectChange() {
+  const sel = document.getElementById("newProdBrandSel");
+  const custom = document.getElementById("newProdBrandCustom");
+  custom.style.display = (sel.value === "__other__") ? "block" : "none";
+}
+
+function onOriginSelectChange() {
+  const sel = document.getElementById("newProdOriginSel");
+  const custom = document.getElementById("newProdOriginCustom");
+  custom.style.display = (sel.value === "__other__") ? "block" : "none";
+}
+
+// 圖片壓縮並取得 Base64
+function previewNewProductImage(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    const img = new Image();
+    img.onload = function() {
+      // 等比例縮圖至最大 800px 寬高，保證上傳速度在 1 秒內
+      const canvas = document.createElement("canvas");
+      let w = img.width, h = img.height;
+      const maxDim = 800;
+      if (w > maxDim || h > maxDim) {
+        if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+        else { w = Math.round((w * maxDim) / h); h = maxDim; }
+      }
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+      const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      newProductBase64Image = compressedDataUrl.split(",")[1];
+
+      document.getElementById("newProdImgPreview").src = compressedDataUrl;
+      document.getElementById("newProdImgPreviewBox").style.display = "block";
+    };
+    img.src = evt.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// 彈窗內相機掃碼對接
+function scanBarcodeForNewProduct() {
+  const code = prompt("請對準條碼進行掃描，或在此手動輸入/刷入條碼號碼：");
+  if (code && code.trim()) {
+    document.getElementById("newProdBarcodeInput").value = cleanBarcode(code);
+  }
+}
+
+// 送出新增產品
+async function submitNewProduct() {
+  const name = document.getElementById("newProdNameInput").value.trim();
+  if (!name) {
+    await appAlert("請填寫「規格與口味 (產品名稱)」！", "資料未完整");
+    return;
+  }
+
+  // 分類自訂轉換
+  let category = document.getElementById("newProdCategorySel").value;
+  if (category === "__other__") category = document.getElementById("newProdCategoryCustom").value.trim();
+
+  // 品牌自訂轉換
+  let brand = document.getElementById("newProdBrandSel").value;
+  if (brand === "__other__") brand = document.getElementById("newProdBrandCustom").value.trim();
+
+  // 產地自訂轉換 (如俄羅斯直接取代其他)
+  let origin = document.getElementById("newProdOriginSel").value;
+  if (origin === "__other__") origin = document.getElementById("newProdOriginCustom").value.trim();
+
+  const price = Number(document.getElementById("newProdPriceInput").value) || 0;
+  const barcode = document.getElementById("newProdBarcodeInput").value.trim();
+
+  const btn = document.getElementById("btnSubmitNewProd");
+  btn.innerText = "⏳ 同步寫入中...";
+
+  try {
+    const res = await apiRequest("", {
+      method: "POST",
+      body: {
+        action: "addProduct",
+        productData: {
+          category,
+          brand,
+          origin,
+          name,
+          price,
+          barcode,
+          imageBase64: newProductBase64Image
+        }
+      }
+    });
+
+    btn.innerText = "確認同步新增";
+    closeModal("addProductModal");
+
+    if (res.success) {
+      await appAlert(`✅ 新增成功！\n${res.msg}`, "成功");
+      // 重新加載商品資料與 Tab 2 報表
+      await loadProducts(currentActiveSheetName, currentActiveWeek);
+      if (activeTab === "tab2") loadTab2Data();
+    } else {
+      await appAlert(res.msg, "操作被拒");
+    }
+  } catch (err) {
+    btn.innerText = "確認同步新增";
+    await appAlert("新增失敗：" + err.message, "伺服器錯誤");
+  }
+}
