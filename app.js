@@ -535,6 +535,7 @@ async function confirmOrder() {
   }
 }
 
+// 請替換 app.js 中的 loadTab2Data 函式：
 async function loadTab2Data() {
   const isHigh = (userRole === "System" || userRole === "Admin" || userRole === "管理員");
   const isSystem = (userRole === "System");
@@ -550,6 +551,10 @@ async function loadTab2Data() {
     if (sheetName) query += `&sheetName=${encodeURIComponent(sheetName)}`;
 
     const res = await apiRequest(query);
+    if (res.error) {
+      await appAlert("後端資料讀取提示：" + res.error, "讀取提示");
+    }
+
     tab2DataList = res.rows || [];
     const tbody = document.getElementById("tab2Body");
     let html = "";
@@ -567,14 +572,18 @@ async function loadTab2Data() {
       </tr>`;
     });
     tbody.innerHTML = html || '<tr><td colspan="4" style="padding:20px; color:#888;">本週暫無記錄</td></tr>';
+    
+    // 安全取值：防範 totals 為 undefined
+    const totals = res.totals || { prevRemain: 0, regQty: 0, curRemain: 0 };
     document.getElementById("tab2Foot").innerHTML =
       `<tr style="font-weight:bold; background:#fafafa;">
-        <td>總計</td><td>${res.totals.prevRemain}</td><td>${res.totals.regQty}</td><td>${res.totals.curRemain}</td>
+        <td>總計</td><td>${totals.prevRemain}</td><td>${totals.regQty}</td><td>${totals.curRemain}</td>
       </tr>`;
   } catch (err) {
     appAlert("載入報名數目失敗: " + err.message, "讀取錯誤");
   }
 }
+
 
 // Tab 3：移除「杯」量詞，支援大面積點擊修改
 async function loadTab3Data() {
