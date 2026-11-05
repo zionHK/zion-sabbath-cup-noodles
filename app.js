@@ -136,6 +136,7 @@ async function apiRequest(path = "", options = {}) {
 }
 window.apiRequest = apiRequest;
 
+// 頂部狀態列渲染：頭像/姓名 與 角色標籤 獨立點擊
 function renderUserStatus() {
   const textEl = document.getElementById("userStatusText");
   const gisBox = document.getElementById("gisButtonBox");
@@ -147,19 +148,35 @@ function renderUserStatus() {
       localStorage.setItem("cup_noodle_user_role", userRole);
     }
     const displayName = userNickname || userEmail.split("@")[0];
-    let roleBadge = (userRole === "我只是來大吃的") ? "大吃 (無限額)" : userRole;
+    let roleBadgeText = (userRole === "我只是來大吃的") ? "大吃" : userRole;
 
-    textEl.innerHTML = `<span onclick="openUserProfileModal()" style="cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
-      <img src="${userAvatarUrl || 'https://via.placeholder.com/24'}" style="width: 22px; height: 22px; border-radius: 50%; vertical-align: middle;">
-      <b>${displayName}</b> (${userEmail.split("@")[0]}) | 權限：<span class="user-role-badge">${roleBadge} ℹ️</span>
-    </span>`;
+    // 向量剪影圖標 (防範顯示文字 User)
+    const avatarImg = userAvatarUrl 
+      ? `<img src="${userAvatarUrl}" style="width:24px; height:24px; border-radius:50%; object-fit:cover;">`
+      : `<span style="display:inline-flex; width:24px; height:24px; border-radius:50%; background:#1565c0; color:#fff; align-items:center; justify-content:center; font-size:12px;">👤</span>`;
+
+    textEl.innerHTML = `
+      <span onclick="openUserProfileModal()" style="cursor: pointer; display: inline-flex; align-items: center; gap: 6px;" title="點擊檢視個人名片">
+        ${avatarImg}
+        <b>${displayName}</b>
+      </span>
+      <span style="color:#aaa;">|</span>
+      <span class="user-role-badge" onclick="onRoleBadgeClicked(event)" title="點擊檢視系統權限說明書" style="cursor:pointer;">
+        ${roleBadgeText}
+      </span>
+    `;
     gisBox.style.display = "none";
     btnLogout.style.display = "inline-block";
   } else {
-    textEl.innerHTML = `未登入訪客 | 權限：<span class="user-role-badge" onclick="openRoleGuideModal()">我只是來吃吃的 (限3杯) ℹ️</span>`;
+    textEl.innerHTML = `未登入訪客 | <span class="user-role-badge" onclick="onRoleBadgeClicked(event)" style="cursor:pointer;">吃吃</span>`;
     gisBox.style.display = "inline-block";
     btnLogout.style.display = "none";
   }
+}
+// 點擊 System / 角色徽章時直接開啟權限說明書 (阻止冒泡，不跳個人名片)
+function onRoleBadgeClicked(e) {
+  if (e) e.stopPropagation();
+  openRoleGuideModal();
 }
 
 function parseJwt(token) {
@@ -960,20 +977,73 @@ async function confirmScanStock() {
     await appAlert("條碼核算失敗: " + err.message, "網路/伺服器錯誤");
   }
 }
-
+// 開啟名片彈窗
 function openUserProfileModal() {
-  document.getElementById("profileModalAvatar").src = userAvatarUrl || "https://via.placeholder.com/80?text=User";
+  const avatarImg = document.getElementById("profileModalAvatar");
+  const avatarSvg = document.getElementById("profileModalAvatarSvg");
+  if (userAvatarUrl) {
+    avatarImg.src = userAvatarUrl;
+    avatarImg.style.display = "block";
+    avatarSvg.style.display = "none";
+  } else {
+    avatarImg.style.display = "none";
+    avatarSvg.style.display = "block";
+  }
+
   document.getElementById("profileModalName").innerText = userNickname || userEmail.split("@")[0];
   document.getElementById("profileModalEmail").innerText = userEmail;
-  document.getElementById("profileModalRoleBadge").innerText = `${userRole} (點擊檢視權限說明)`;
+  document.getElementById("profileModalRoleBadge").innerText = `${userRole} (點擊開啟說明書)`;
   document.getElementById("userProfileModal").style.display = "flex";
 }
+
 
 function openRoleGuideFromProfile() {
   closeModal("userProfileModal");
   openRoleGuideModal();
 }
+// 開啟權限說明書手風琴
+function openRoleGuideModal() {
+  const roles = ['admin', 'auditor', 'eater-pro', 'eater-guest'];
+  roles.forEach(r => {
+    const b = document.getElementById(`body-${r}`);
+    const a = document.getElementById(`arrow-${r}`);
+    const t = document.getElementById(`tag-${r}`);
+    const c = document.getElementById(`card-${r}`);
+    if (b) b.style.display = 'none';
+    if (a) a.innerText = '▼';
+    if (t) t.style.display = 'none';
+    if (c) c.classList.remove('current-role');
+  });
 
+  // 判定目前身分並優先自動展開
+  let currentKey = 'eater-guest';
+  if (userEmail && userEmail.indexOf("@") > -1) {
+    if (userRole === 'System' || userRole === 'Admin' || userRole === '管理員') currentKey = 'admin';
+    else if (userRole === '核對員') currentKey = 'auditor';
+    else currentKey = 'eater-pro';
+  }
+
+  const activeBody = document.getElementById(`body-${currentKey}`);
+  const activeArrow = document.getElementById(`arrow-${currentKey}`);
+  const activeTag = document.getElementById(`tag-${currentKey}`);
+  const activeCard = document.getElementById(`card-${currentKey}`);
+
+  if (activeBody) activeBody.style.display = 'block';
+  if (activeArrow) activeArrow.innerText = '▲';
+  if (activeTag) activeTag.style.display = 'inline-block';
+  if (activeCard) activeCard.classList.add('current-role');
+
+  const modal = document.getElementById("roleGuideModal");
+  if (modal) modal.style.display = "flex";
+}
+function toggleRoleCard(roleKey) {
+  const body = document.getElementById(`body-${roleKey}`);
+  const arrow = document.getElementById(`arrow-${roleKey}`);
+  if (!body) return;
+  const isExpanded = (body.style.display === 'block');
+  body.style.display = isExpanded ? 'none' : 'block';
+  if (arrow) arrow.innerText = isExpanded ? '▼' : '▲';
+}
 async function editUserNicknamePrompt() {
   const currentName = userNickname || userEmail.split("@")[0];
   const newName = prompt("請輸入您的新姓名 / 暱稱：", currentName);
