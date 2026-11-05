@@ -5,6 +5,9 @@ let idToken = localStorage.getItem("cup_noodle_id_token") || "";
 let userEmail = localStorage.getItem("cup_noodle_user_email") || "";
 // 第 6 行：未登入時預設為「我只是來吃吃的」
 let userRole = localStorage.getItem("cup_noodle_user_role") || "我只是來吃吃的";
+let userAvatarUrl = localStorage.getItem("cup_noodle_user_avatar") || "";
+let userNickname = localStorage.getItem("cup_noodle_user_nickname") || "";
+let pendingOrderDeduct = null;
 
 let currentActiveSheetName = "";
 let currentActiveWeek = 1;
@@ -186,28 +189,92 @@ function parseJwt(token) {
   ));
 }
 
-// 登入回調函式：登入成功當下立即解鎖大吃權限
+// 解析 Google GIS Token 時提取頭像與名字
 async function handleCredentialResponse(response) {
   try {
     idToken = response.credential;
     localStorage.setItem("cup_noodle_id_token", idToken);
     const profile = parseJwt(idToken);
     userEmail = profile.email || "";
-    localStorage.setItem("cup_noodle_user_email", userEmail);
+    userAvatarUrl = profile.picture || "https://via.placeholder.com/80?text=User";
+    userNickname = profile.name || userEmail.split("@")[0];
 
-    // 登入後強制提升為「我只是來大吃的」
+    localStorage.setItem("cup_noodle_user_email", userEmail);
+    localStorage.setItem("cup_noodle_user_avatar", userAvatarUrl);
+    localStorage.setItem("cup_noodle_user_nickname", userNickname);
+
     userRole = "我只是來大吃的";
     localStorage.setItem("cup_noodle_user_role", userRole);
 
     renderUserStatus();
-
     await loadProducts(currentActiveSheetName || null, currentActiveWeek || null);
-    renderUserStatus();
     setupPermissions();
   } catch (err) {
     appAlert("登入處理失敗：" + err.message, "登入錯誤");
   }
 }
+// 頂部狀態列渲染 (點擊任意處開啟個人名片)
+function renderUserStatus() {
+  const textEl = document.getElementById("userStatusText");
+  const gisBox = document.getElementById("gisButtonBox");
+  const btnLogout = document.getElementById("btnLogout");
+
+  if (userEmail && userEmail.indexOf("@") > -1) {
+    const displayName = userNickname || userEmail.split("@")[0];
+    let roleBadge = userRole;
+    if (userRole === "我只是來大吃的") roleBadge = "大吃 (無限額)";
+    else if (userRole === "我只是來吃吃的") roleBadge = "吃吃 (限3杯)";
+
+    textEl.innerHTML = `<span onclick="openUserProfileModal()" style="cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+      <img src="${userAvatarUrl || 'https://via.placeholder.com/24'}" style="width: 22px; height: 22px; border-radius: 50%; vertical-align: middle;">
+      <b>${displayName}</b> (${userEmail.split("@")[0]}) | 權限：<span class="user-role-badge">${roleBadge} ℹ️</span>
+    </span>`;
+    gisBox.style.display = "none";
+    btnLogout.style.display = "inline-block";
+  } else {
+    textEl.innerHTML = `未登入訪客 | 權限：<span class="user-role-badge" onclick="openRoleGuideModal()">我只是來吃吃的 ℹ️</span>`;
+    gisBox.style.display = "inline-block";
+    btnLogout.style.display = "none";
+  }
+}
+// 開啟名片彈窗
+function openUserProfileModal() {
+  document.getElementById("profileModalAvatar").src = userAvatarUrl || "https://via.placeholder.com/80?text=User";
+  document.getElementById("profileModalName").innerText = userNickname || userEmail.split("@")[0];
+  document.getElementById("profileModalEmail").innerText = userEmail;
+  document.getElementById("profileModalRoleBadge").innerText = `${userRole} (點擊檢視權限說明)`;
+  document.getElementById("userProfileModal").style.display = "flex";
+}
+
+function openRoleGuideFromProfile() {
+  closeModal("userProfileModal");
+  openRoleGuideModal();
+}
+
+// 點擊 ✏️ 彈窗修改暱稱
+async function editUserNicknamePrompt() {
+  const currentName = userNickname || userEmail.split("@")[0];
+  const newName = prompt("請輸入您的新姓名 / 暱稱：", currentName);
+  if (!newName || newName.trim() === "" || newName.trim() === currentName) return;
+
+  try {
+    const res = await apiRequest("", {
+      method: "POST",
+      body: { action: "updateNickname", newNickname: newName.trim() }
+    });
+    if (res.success) {
+      userNickname = res.nickname;
+      localStorage.setItem("cup_noodle_user_nickname", userNickname);
+      document.getElementById("profileModalName").innerText = userNickname;
+      renderUserStatus();
+      await appAlert("暱稱已成功更新為：" + userNickname, "修改成功");
+    }
+  } catch (e) {
+    appAlert("修改暱稱失敗: " + e.message, "錯誤");
+  }
+}
+
+
 // 登出函式：登出後重置為「我只是來吃吃的」
 async function logoutUser() {
   const ok = await appConfirm("確定要登出 Google 帳號嗎？", "帳號登出");
@@ -497,7 +564,13 @@ async function confirmOrder() {
     const p = products.find(x => x.rowIndex == r);
     if (p) {
       total += cart[r];
-      items.push({ rowIndex: r, name: p.fullName, qty: cart[r] });
+      items.push({ 
+        rowIndex: r, 
+        name: p.fullName, 
+        qty: cart[r], 
+        price: p.price || 0,
+        imgUrl: p.imgUrl || "" 
+      });
     }
   }
   if (total === 0) {
@@ -859,7 +932,31 @@ function stopScanner() {
 }
 
 // 掃描或手動輸入條碼：預設載入該品項目前的剩餘總數
+// 核心整合：Tab 3 單鍵智能雙模掃描 (同時支援杯麵條碼與取餐 QR Code)
 function onBarcodeScanned(code) {
+  // 1. 若掃描到取餐專用 QR Code
+  if (code.indexOf("CNORDER:") === 0) {
+    try {
+      const jsonStr = code.substring(8);
+      const order = JSON.parse(jsonStr);
+      pendingOrderDeduct = order;
+
+      document.getElementById("deductModalTime").innerText = `訂單時間：${order.time}\n訂購人：${order.user}`;
+      const tbody = document.getElementById("deductModalList");
+      let html = "";
+      order.items.forEach(it => {
+        html += `<tr><td style="text-align:left;">${it.name}</td><td><b>x${it.qty}</b></td></tr>`;
+      });
+      tbody.innerHTML = html;
+      document.getElementById("orderDeductModal").style.display = "flex";
+      return;
+    } catch (e) {
+      appAlert("QR Code 格式不正確或已損壞！", "解析錯誤");
+      return;
+    }
+  }
+
+  // 2. 若為普通杯麵條碼，走既有庫存設定流程
   currentBarcode = code;
   const cleanTarget = cleanBarcode(code);
   const p = products.find(x => cleanBarcode(x.barcode) === cleanTarget && cleanTarget !== "");
@@ -870,18 +967,49 @@ function onBarcodeScanned(code) {
   const qtyInput = document.getElementById("scanModalQtyInput");
 
   codeEl.innerText = `條碼號碼：${code}`;
-
   if (p) {
     imgEl.src = p.imgUrl || "https://via.placeholder.com/100?text=CupNoodle";
     nameEl.innerText = p.fullName;
-    // 預設為目前剩餘總數（方便盤點人員直接設定最新值）
     qtyInput.value = p.remain || 0;
   } else {
     imgEl.src = "https://via.placeholder.com/100?text=Barcode";
-    nameEl.innerText = `條碼品項 (${code})`;
+    nameEl.innerText = `條碼商品 (${code})`;
     qtyInput.value = 0;
   }
   document.getElementById("scanModal").style.display = "flex";
+}
+// 執行訂單一鍵扣減核銷
+async function executeOrderDeduct() {
+  if (!pendingOrderDeduct) return;
+  const btn = document.getElementById("btnConfirmDeduct");
+  btn.innerText = "⏳ 核銷中...";
+
+  try {
+    const res = await apiRequest("", {
+      method: "POST",
+      body: {
+        action: "deductOrder",
+        items: pendingOrderDeduct.items,
+        sheetName: currentActiveSheetName,
+        week: currentActiveWeek
+      }
+    });
+
+    btn.innerText = "確認一鍵扣減";
+    closeModal("orderDeductModal");
+
+    if (res.success) {
+      await appAlert(`核銷成功！已從本週庫存自動扣減：\n${res.details.join("\n")}`, "核銷完成");
+      loadProducts(currentActiveSheetName, currentActiveWeek);
+      if (activeTab === "tab2") loadTab2Data();
+      if (activeTab === "tab3") loadTab3Data();
+    } else {
+      await appAlert(res.msg, "操作被拒");
+    }
+  } catch (e) {
+    btn.innerText = "確認一鍵扣減";
+    await appAlert("核銷失敗: " + e.message, "伺服器錯誤");
+  }
 }
 
 function adjustScanQty(delta) {
