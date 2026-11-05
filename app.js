@@ -1,13 +1,17 @@
+/**
+ * app.js - 前端核心邏輯 (純淨無重複、極速載入版)
+ */
+
 const GOOGLE_CLIENT_ID = "709009270844-mdhc9tuanitn13fsbtrebrdirvhvn1uq.apps.googleusercontent.com";
 const API_URL = "https://script.google.com/macros/s/AKfycbymW1267l6UWmdVElFgupFmOMo735hctNkAztjttTJfzUF4rpJ-qvmT3spGRBX5n27p/exec";
 
 let idToken = localStorage.getItem("cup_noodle_id_token") || "";
 let userEmail = localStorage.getItem("cup_noodle_user_email") || "";
-// 第 6 行：未登入時預設為「我只是來吃吃的」
 let userRole = localStorage.getItem("cup_noodle_user_role") || "我只是來吃吃的";
 let userAvatarUrl = localStorage.getItem("cup_noodle_user_avatar") || "";
 let userNickname = localStorage.getItem("cup_noodle_user_nickname") || "";
 let pendingOrderDeduct = null;
+let newProductBase64Image = "";
 
 let currentActiveSheetName = "";
 let currentActiveWeek = 1;
@@ -88,7 +92,6 @@ function appConfirm(message, title = "操作確認") {
   });
 }
 
-// 加入 12 秒超時中斷保護，防止網路或伺服器卡死導致「一直載入中」
 async function apiRequest(path = "", options = {}) {
   const url = new URL(API_URL + path);
   let fetchOptions = { ...options };
@@ -112,7 +115,6 @@ async function apiRequest(path = "", options = {}) {
     };
   }
 
-  // 25 秒 Timeout 控制 (為 Apps Script 容器冷啟動預留充足反應時間)
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 25000);
   fetchOptions.signal = controller.signal;
@@ -134,51 +136,32 @@ async function apiRequest(path = "", options = {}) {
 }
 window.apiRequest = apiRequest;
 
-// 第 95 行開始替換：renderUserStatus
 function renderUserStatus() {
   const textEl = document.getElementById("userStatusText");
   const gisBox = document.getElementById("gisButtonBox");
   const btnLogout = document.getElementById("btnLogout");
 
   if (userEmail && userEmail.indexOf("@") > -1) {
-    // 核心修正：只要是已登入狀態，非管理員一律保證為「我只是來大吃的」
     if (!userRole || userRole === "我只是來吃吃的") {
       userRole = "我只是來大吃的";
       localStorage.setItem("cup_noodle_user_role", userRole);
     }
+    const displayName = userNickname || userEmail.split("@")[0];
+    let roleBadge = (userRole === "我只是來大吃的") ? "大吃 (無限額)" : userRole;
 
-    let roleBadge = userRole;
-    if (userRole === "我只是來大吃的") {
-      roleBadge = "我只是來大吃的 (無限額)";
-    }
-    textEl.innerText = `已登入：${userEmail} | 權限：${roleBadge}`;
+    textEl.innerHTML = `<span onclick="openUserProfileModal()" style="cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+      <img src="${userAvatarUrl || 'https://via.placeholder.com/24'}" style="width: 22px; height: 22px; border-radius: 50%; vertical-align: middle;">
+      <b>${displayName}</b> (${userEmail.split("@")[0]}) | 權限：<span class="user-role-badge">${roleBadge} ℹ️</span>
+    </span>`;
     gisBox.style.display = "none";
     btnLogout.style.display = "inline-block";
   } else {
-    // 未登入訪客
-    userRole = "我只是來吃吃的";
-    textEl.innerText = "未登入訪客 (我只是來吃吃的，限購 3 杯)";
+    textEl.innerHTML = `未登入訪客 | 權限：<span class="user-role-badge" onclick="openRoleGuideModal()">我只是來吃吃的 (限3杯) ℹ️</span>`;
     gisBox.style.display = "inline-block";
     btnLogout.style.display = "none";
   }
 }
 
-function initGoogleGIS() {
-  if (!window.google?.accounts?.id) return;
-  google.accounts.id.initialize({
-    client_id: GOOGLE_CLIENT_ID,
-    callback: handleCredentialResponse,
-    auto_select: true
-  });
-
-  const topBtnBox = document.getElementById("gisButtonBox");
-  if (topBtnBox) {
-    google.accounts.id.renderButton(
-      topBtnBox,
-      { type: "standard", theme: "outline", size: "medium", text: "signin_with" }
-    );
-  }
-}
 function parseJwt(token) {
   const payload = token.split(".")[1];
   if (!payload) throw new Error("無效的 Token 格式。");
@@ -189,7 +172,6 @@ function parseJwt(token) {
   ));
 }
 
-// 解析 Google GIS Token 時提取頭像與名字
 async function handleCredentialResponse(response) {
   try {
     idToken = response.credential;
@@ -213,77 +195,19 @@ async function handleCredentialResponse(response) {
     appAlert("登入處理失敗：" + err.message, "登入錯誤");
   }
 }
-// 頂部狀態列渲染 (點擊任意處開啟個人名片)
-function renderUserStatus() {
-  const textEl = document.getElementById("userStatusText");
-  const gisBox = document.getElementById("gisButtonBox");
-  const btnLogout = document.getElementById("btnLogout");
 
-  if (userEmail && userEmail.indexOf("@") > -1) {
-    const displayName = userNickname || userEmail.split("@")[0];
-    let roleBadge = userRole;
-    if (userRole === "我只是來大吃的") roleBadge = "大吃 (無限額)";
-    else if (userRole === "我只是來吃吃的") roleBadge = "吃吃 (限3杯)";
-
-    textEl.innerHTML = `<span onclick="openUserProfileModal()" style="cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
-      <img src="${userAvatarUrl || 'https://via.placeholder.com/24'}" style="width: 22px; height: 22px; border-radius: 50%; vertical-align: middle;">
-      <b>${displayName}</b> (${userEmail.split("@")[0]}) | 權限：<span class="user-role-badge">${roleBadge} ℹ️</span>
-    </span>`;
-    gisBox.style.display = "none";
-    btnLogout.style.display = "inline-block";
-  } else {
-    textEl.innerHTML = `未登入訪客 | 權限：<span class="user-role-badge" onclick="openRoleGuideModal()">我只是來吃吃的 ℹ️</span>`;
-    gisBox.style.display = "inline-block";
-    btnLogout.style.display = "none";
-  }
-}
-// 開啟名片彈窗
-function openUserProfileModal() {
-  document.getElementById("profileModalAvatar").src = userAvatarUrl || "https://via.placeholder.com/80?text=User";
-  document.getElementById("profileModalName").innerText = userNickname || userEmail.split("@")[0];
-  document.getElementById("profileModalEmail").innerText = userEmail;
-  document.getElementById("profileModalRoleBadge").innerText = `${userRole} (點擊檢視權限說明)`;
-  document.getElementById("userProfileModal").style.display = "flex";
-}
-
-function openRoleGuideFromProfile() {
-  closeModal("userProfileModal");
-  openRoleGuideModal();
-}
-
-// 點擊 ✏️ 彈窗修改暱稱
-async function editUserNicknamePrompt() {
-  const currentName = userNickname || userEmail.split("@")[0];
-  const newName = prompt("請輸入您的新姓名 / 暱稱：", currentName);
-  if (!newName || newName.trim() === "" || newName.trim() === currentName) return;
-
-  try {
-    const res = await apiRequest("", {
-      method: "POST",
-      body: { action: "updateNickname", newNickname: newName.trim() }
-    });
-    if (res.success) {
-      userNickname = res.nickname;
-      localStorage.setItem("cup_noodle_user_nickname", userNickname);
-      document.getElementById("profileModalName").innerText = userNickname;
-      renderUserStatus();
-      await appAlert("暱稱已成功更新為：" + userNickname, "修改成功");
-    }
-  } catch (e) {
-    appAlert("修改暱稱失敗: " + e.message, "錯誤");
-  }
-}
-
-
-// 登出函式：登出後重置為「我只是來吃吃的」
 async function logoutUser() {
   const ok = await appConfirm("確定要登出 Google 帳號嗎？", "帳號登出");
   if (ok) {
     localStorage.removeItem("cup_noodle_id_token");
     localStorage.removeItem("cup_noodle_user_email");
     localStorage.removeItem("cup_noodle_user_role");
+    localStorage.removeItem("cup_noodle_user_avatar");
+    localStorage.removeItem("cup_noodle_user_nickname");
     idToken = "";
     userEmail = "";
+    userAvatarUrl = "";
+    userNickname = "";
     userRole = "我只是來吃吃的";
     renderUserStatus();
     setupPermissions();
@@ -304,6 +228,7 @@ function initGoogleGIS() {
   );
 }
 
+// 修正：括號正確閉合，管理員才能看見新增產品按鈕
 function setupPermissions() {
   const btn1 = document.getElementById("tab1Btn");
   const btn2 = document.getElementById("tab2Btn");
@@ -312,18 +237,18 @@ function setupPermissions() {
   const sheetTxt = document.getElementById("sheetText");
   const weekSel = document.getElementById("weekSelect");
   const weekTxt = document.getElementById("weekText");
+  const addBtn = document.getElementById("btnOpenAddModal");
 
   const roleStr = (userRole || "").toLowerCase();
   const isSystem = (userRole === "System");
   const isAdmin = (userRole === "Admin" || userRole === "管理員" || roleStr === "admin");
   const isAuditor = (userRole === "核對員");
-  const addBtn = document.getElementById("btnOpenAddModal");
-  if (addBtn) {
+
   if (btn1) btn1.style.display = "block";
   if (btn2) btn2.style.display = (isSystem || isAdmin) ? "block" : "none";
   if (btn3) btn3.style.display = (isSystem || isAdmin || isAuditor) ? "block" : "none";
-  addBtn.style.display = (isSystem || isAdmin) ? "inline-block" : "none";
-  
+  if (addBtn) addBtn.style.display = (isSystem || isAdmin) ? "inline-block" : "none";
+
   if (isSystem || isAdmin) {
     if (sheetSel) sheetSel.style.display = "inline-block";
     if (sheetTxt) sheetTxt.style.display = "none";
@@ -353,7 +278,6 @@ function switchTab(tabId) {
   if (targetContent) targetContent.classList.add("active");
   activeTab = tabId;
 
-  // 切換時徹底隱藏 Tab 1 的專屬浮動元素
   closeDrawer();
   const isTab1 = (tabId === "tab1");
   const pageSizeContainer = document.getElementById("pageSizeContainer");
@@ -446,7 +370,6 @@ function onFilterChange() {
 }
 
 function renderGrid() {
-  // 每次渲染網格時自動重新計算「現貨總數」，確保與 Tab 3 完全同步
   let totalStock = 0;
   products.forEach(p => { totalStock += (Number(p.remain) || 0); });
   const subTitleEl = document.getElementById("tab1SubTitle");
@@ -499,7 +422,6 @@ function changePage(delta) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-// 點擊產品名稱/圖片彈窗展示詳情與條碼
 function showProductDetail(rowIndex) {
   const p = products.find(x => x.rowIndex == rowIndex);
   if (!p) return;
@@ -579,19 +501,8 @@ async function confirmOrder() {
   }
 
   const isGuest = (!userEmail || userEmail === "" || userEmail.indexOf("@") === -1);
-  const isFoodieLimited = (userRole === "我只是來吃吃的");
   const isLimited = isGuest || (userRole === "我只是來吃吃的");
 
-  if (isGuest && total > 3) {
-    await appAlert("未登入訪客單次預訂不可超過 3 杯！\n若需訂購 3 杯以上，請使用上方 Google 帳號按鈕登入後再登記。", "預訂限制提示");
-    return;
-  }
-
-  if (!isGuest && isFoodieLimited && total > 3) {
-    await appAlert("您的身分為「我只是來吃吃的」，單次預訂上限為 3 杯！\n若需無限制訂購，請聯絡管理員將您的身分調整為「我只是來大吃的」。", "預訂限制提示");
-    return;
-  }
-  // 未登入訪客或「我只是來吃吃的」：上限 3 杯
   if (isLimited && total > 3) {
     await appAlert(
       "⚠️ 預訂限制提示：\n未登入訪客或「我只是來吃吃的」單次預訂不可超過 3 杯！\n若需無限制訂購，請點擊右上角 Google 登入升級為「大吃」。",
@@ -599,7 +510,6 @@ async function confirmOrder() {
     );
     return;
   }
-  // 登入為「我只是來大吃的」/ System / Admin / 核對員：直接放行無限制
 
   const ok = await appConfirm(`確認提交預訂共 ${total} 杯？`, "確認預訂");
   if (ok) {
@@ -688,9 +598,6 @@ async function loadTab2Data() {
   }
 }
 
-
-
-// Tab 3：移除「杯」量詞，支援大面積點擊修改
 async function loadTab3Data() {
   const roleStr = (userRole || "").toLowerCase();
   const canEdit = (userRole === "System" || userRole === "Admin" || userRole === "核對員" || roleStr === "admin");
@@ -772,7 +679,6 @@ function closeModal(id) {
   document.getElementById(id).style.display = "none";
 }
 
-// 修改本週最新剩餘（即時更新前端數值，避免等待延遲）
 async function executeSystemEdit() {
   if (!pendingEdit) return;
   const newVal = document.getElementById("editNewValInput").value;
@@ -800,13 +706,11 @@ async function executeSystemEdit() {
     });
     closeModal("editModal");
     if (res.success) {
-      // 即時前端更新資料快取
       const t3Item = tab3DataList.find(x => x.rowIndex == pendingEdit.rowIndex);
       if (t3Item) t3Item.curRemain = Number(newVal);
       const prodItem = products.find(x => x.rowIndex == pendingEdit.rowIndex);
       if (prodItem) prodItem.remain = Number(newVal);
 
-      // 即時重繪畫面
       loadTab3Data();
       renderGrid();
 
@@ -838,7 +742,6 @@ function handleManualBarcodeClick() {
   onBarcodeScanned(code);
 }
 
-// 啟動相機 (支援自動放大 Zoom 2x 辨識細小條碼)
 function startScanner() {
   const wrapper = document.getElementById("scannerWrapper");
   const videoEl = document.getElementById("readerVideo");
@@ -859,7 +762,6 @@ function startScanner() {
       videoEl.srcObject = stream;
       isLiveScanning = true;
 
-      // 自動調用相機放大 (Zoom) 能力
       try {
         const track = stream.getVideoTracks()[0];
         const capabilities = track.getCapabilities ? track.getCapabilities() : {};
@@ -886,7 +788,6 @@ function startScanner() {
     });
   }
 }
-
 
 function detectBarcodeStream(videoEl) {
   if (!isLiveScanning) return;
@@ -931,10 +832,7 @@ function stopScanner() {
   }
 }
 
-// 掃描或手動輸入條碼：預設載入該品項目前的剩餘總數
-// 核心整合：Tab 3 單鍵智能雙模掃描 (同時支援杯麵條碼與取餐 QR Code)
 function onBarcodeScanned(code) {
-  // 1. 若掃描到取餐專用 QR Code
   if (code.indexOf("CNORDER:") === 0) {
     try {
       const jsonStr = code.substring(8);
@@ -956,7 +854,6 @@ function onBarcodeScanned(code) {
     }
   }
 
-  // 2. 若為普通杯麵條碼，走既有庫存設定流程
   currentBarcode = code;
   const cleanTarget = cleanBarcode(code);
   const p = products.find(x => cleanBarcode(x.barcode) === cleanTarget && cleanTarget !== "");
@@ -978,7 +875,7 @@ function onBarcodeScanned(code) {
   }
   document.getElementById("scanModal").style.display = "flex";
 }
-// 執行訂單一鍵扣減核銷
+
 async function executeOrderDeduct() {
   if (!pendingOrderDeduct) return;
   const btn = document.getElementById("btnConfirmDeduct");
@@ -989,7 +886,7 @@ async function executeOrderDeduct() {
       method: "POST",
       body: {
         action: "deductOrder",
-        items: pendingOrderDeduct.items,
+        orderPayload: pendingOrderDeduct,
         sheetName: currentActiveSheetName,
         week: currentActiveWeek
       }
@@ -1019,7 +916,6 @@ function adjustScanQty(delta) {
   input.value = val;
 }
 
-// 確認設定剩餘總數（即時回饋最新數值）
 async function confirmScanStock() {
   const sheetName = currentActiveSheetName || null;
   const week = currentActiveWeek || null;
@@ -1043,7 +939,6 @@ async function confirmScanStock() {
     closeModal("scanModal");
 
     if (res.success) {
-      // 即時同步前端記憶體
       const cleanTarget = cleanBarcode(currentBarcode);
       const prodItem = products.find(x => cleanBarcode(x.barcode) === cleanTarget);
       if (prodItem) {
@@ -1052,7 +947,6 @@ async function confirmScanStock() {
         if (t3Item) t3Item.curRemain = res.newStock;
       }
 
-      // 即時重繪表格
       loadTab3Data();
       renderGrid();
 
@@ -1067,28 +961,41 @@ async function confirmScanStock() {
   }
 }
 
-function safeInitGIS() {
-  if (window.google?.accounts?.id) {
-    initGoogleGIS();
-  } else {
-    window.addEventListener("load", initGoogleGIS);
+function openUserProfileModal() {
+  document.getElementById("profileModalAvatar").src = userAvatarUrl || "https://via.placeholder.com/80?text=User";
+  document.getElementById("profileModalName").innerText = userNickname || userEmail.split("@")[0];
+  document.getElementById("profileModalEmail").innerText = userEmail;
+  document.getElementById("profileModalRoleBadge").innerText = `${userRole} (點擊檢視權限說明)`;
+  document.getElementById("userProfileModal").style.display = "flex";
+}
+
+function openRoleGuideFromProfile() {
+  closeModal("userProfileModal");
+  openRoleGuideModal();
+}
+
+async function editUserNicknamePrompt() {
+  const currentName = userNickname || userEmail.split("@")[0];
+  const newName = prompt("請輸入您的新姓名 / 暱稱：", currentName);
+  if (!newName || newName.trim() === "" || newName.trim() === currentName) return;
+
+  try {
+    const res = await apiRequest("", {
+      method: "POST",
+      body: { action: "updateNickname", newNickname: newName.trim() }
+    });
+    if (res.success) {
+      userNickname = res.nickname;
+      localStorage.setItem("cup_noodle_user_nickname", userNickname);
+      document.getElementById("profileModalName").innerText = userNickname;
+      renderUserStatus();
+      await appAlert("暱稱已成功更新為：" + userNickname, "修改成功");
+    }
+  } catch (e) {
+    appAlert("修改暱稱失敗: " + e.message, "錯誤");
   }
 }
 
-window.addEventListener("DOMContentLoaded", () => {
-  renderUserStatus();
-  setupTabs();
-  setupPermissions();
-  setupBarcodeInput();
-  safeInitGIS();
-  loadProducts(null, null);
-});
-
-  // --- 新增產品項目前端邏輯 ---
-
-let newProductBase64Image = "";
-
-// 開啟彈窗並自現有商品提取分類、品牌、產地建立選項
 function openAddProductModal() {
   const cats = new Set();
   const brands = new Set();
@@ -1104,7 +1011,6 @@ function openAddProductModal() {
   populateSelectOptions("newProdBrandSel", Array.from(brands), "請選擇品牌...");
   populateSelectOptions("newProdOriginSel", Array.from(origins), "請選擇產地...");
 
-  // 重置表單欄位
   document.getElementById("newProdCategoryCustom").style.display = "none";
   document.getElementById("newProdCategoryCustom").value = "";
   document.getElementById("newProdBrandCustom").style.display = "none";
@@ -1114,6 +1020,7 @@ function openAddProductModal() {
   document.getElementById("newProdNameInput").value = "";
   document.getElementById("newProdPriceInput").value = "10";
   document.getElementById("newProdBarcodeInput").value = "";
+  document.getElementById("newProdRemarkInput").value = "";
   document.getElementById("newProdImgFileInput").value = "";
   document.getElementById("newProdImgPreviewBox").style.display = "none";
   newProductBase64Image = "";
@@ -1148,7 +1055,6 @@ function onOriginSelectChange() {
   custom.style.display = (sel.value === "__other__") ? "block" : "none";
 }
 
-// 圖片壓縮並取得 Base64
 function previewNewProductImage(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -1157,7 +1063,6 @@ function previewNewProductImage(e) {
   reader.onload = function(evt) {
     const img = new Image();
     img.onload = function() {
-      // 等比例縮圖至最大 800px 寬高，保證上傳速度在 1 秒內
       const canvas = document.createElement("canvas");
       let w = img.width, h = img.height;
       const maxDim = 800;
@@ -1179,7 +1084,6 @@ function previewNewProductImage(e) {
   reader.readAsDataURL(file);
 }
 
-// 彈窗內相機掃碼對接
 function scanBarcodeForNewProduct() {
   const code = prompt("請對準條碼進行掃描，或在此手動輸入/刷入條碼號碼：");
   if (code && code.trim()) {
@@ -1187,7 +1091,6 @@ function scanBarcodeForNewProduct() {
   }
 }
 
-// 送出新增產品
 async function submitNewProduct() {
   const name = document.getElementById("newProdNameInput").value.trim();
   if (!name) {
@@ -1195,20 +1098,18 @@ async function submitNewProduct() {
     return;
   }
 
-  // 分類自訂轉換
   let category = document.getElementById("newProdCategorySel").value;
   if (category === "__other__") category = document.getElementById("newProdCategoryCustom").value.trim();
 
-  // 品牌自訂轉換
   let brand = document.getElementById("newProdBrandSel").value;
   if (brand === "__other__") brand = document.getElementById("newProdBrandCustom").value.trim();
 
-  // 產地自訂轉換 (如俄羅斯直接取代其他)
   let origin = document.getElementById("newProdOriginSel").value;
   if (origin === "__other__") origin = document.getElementById("newProdOriginCustom").value.trim();
 
   const price = Number(document.getElementById("newProdPriceInput").value) || 0;
   const barcode = document.getElementById("newProdBarcodeInput").value.trim();
+  const remark = document.getElementById("newProdRemarkInput").value.trim();
 
   const btn = document.getElementById("btnSubmitNewProd");
   btn.innerText = "⏳ 同步寫入中...";
@@ -1225,6 +1126,7 @@ async function submitNewProduct() {
           name,
           price,
           barcode,
+          remark,
           imageBase64: newProductBase64Image
         }
       }
@@ -1235,7 +1137,6 @@ async function submitNewProduct() {
 
     if (res.success) {
       await appAlert(`✅ 新增成功！\n${res.msg}`, "成功");
-      // 重新加載商品資料與 Tab 2 報表
       await loadProducts(currentActiveSheetName, currentActiveWeek);
       if (activeTab === "tab2") loadTab2Data();
     } else {
@@ -1246,3 +1147,20 @@ async function submitNewProduct() {
     await appAlert("新增失敗：" + err.message, "伺服器錯誤");
   }
 }
+
+function safeInitGIS() {
+  if (window.google?.accounts?.id) {
+    initGoogleGIS();
+  } else {
+    window.addEventListener("load", initGoogleGIS);
+  }
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  renderUserStatus();
+  setupTabs();
+  setupPermissions();
+  setupBarcodeInput();
+  safeInitGIS();
+  loadProducts(null, null);
+});
