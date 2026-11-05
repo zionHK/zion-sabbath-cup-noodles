@@ -137,6 +137,7 @@ async function apiRequest(path = "", options = {}) {
 window.apiRequest = apiRequest;
 
 // 頂部狀態列渲染：頭像/姓名 與 角色標籤 獨立點擊
+// 頂部狀態列渲染：頭像/姓名 與 角色標籤 獨立點擊
 function renderUserStatus() {
   const textEl = document.getElementById("userStatusText");
   const gisBox = document.getElementById("gisButtonBox");
@@ -996,11 +997,12 @@ function openUserProfileModal() {
   document.getElementById("userProfileModal").style.display = "flex";
 }
 
-
 function openRoleGuideFromProfile() {
   closeModal("userProfileModal");
   openRoleGuideModal();
 }
+
+// 開啟權限說明書手風琴
 // 開啟權限說明書手風琴
 function openRoleGuideModal() {
   const roles = ['admin', 'auditor', 'eater-pro', 'eater-guest'];
@@ -1044,28 +1046,6 @@ function toggleRoleCard(roleKey) {
   body.style.display = isExpanded ? 'none' : 'block';
   if (arrow) arrow.innerText = isExpanded ? '▼' : '▲';
 }
-async function editUserNicknamePrompt() {
-  const currentName = userNickname || userEmail.split("@")[0];
-  const newName = prompt("請輸入您的新姓名 / 暱稱：", currentName);
-  if (!newName || newName.trim() === "" || newName.trim() === currentName) return;
-
-  try {
-    const res = await apiRequest("", {
-      method: "POST",
-      body: { action: "updateNickname", newNickname: newName.trim() }
-    });
-    if (res.success) {
-      userNickname = res.nickname;
-      localStorage.setItem("cup_noodle_user_nickname", userNickname);
-      document.getElementById("profileModalName").innerText = userNickname;
-      renderUserStatus();
-      await appAlert("暱稱已成功更新為：" + userNickname, "修改成功");
-    }
-  } catch (e) {
-    appAlert("修改暱稱失敗: " + e.message, "錯誤");
-  }
-}
-
 function openAddProductModal() {
   const cats = new Set();
   const brands = new Set();
