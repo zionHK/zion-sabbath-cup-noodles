@@ -493,21 +493,37 @@ document.getElementById("btnOpenDrawer").onclick = async () => {
   drawer.style.display = (drawer.style.display === "block") ? "none" : "block";
 };
 // 5. 前端智慧無感即時同步探針 (極省資源)
+// [Part JS.2] 輕量背景即時同步探針 (縮短至 5 秒檢測，喚醒視窗即刻同步)
 function initRealtimeStockSync() {
-  // 每 10 秒檢查一次版本號 (僅在畫面處於前景時執行，背景休眠 0 消耗)
   if (stockSyncTimer) clearInterval(stockSyncTimer);
   stockSyncTimer = setInterval(() => {
     if (!document.hidden) {
       checkStockVersionSilently();
     }
-  }, 10000);
+  }, 5000); // 5 秒極速探針 (僅傳送 15 字元純文字，0 消耗)
 
-  // 當使用者喚醒手機或切回瀏覽器視窗時，立即檢查一次
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {
       checkStockVersionSilently();
     }
   });
+}
+
+async function checkStockVersionSilently() {
+  try {
+    const res = await apiRequest("?action=checkVersion");
+    if (res && res.version) {
+      if (!localStockVersion) {
+        localStockVersion = res.version;
+      } else if (localStockVersion !== res.version) {
+        // 發現有人下單或核銷，無感刷新
+        localStockVersion = res.version;
+        loadProducts(currentActiveSheetName, currentActiveWeek);
+        if (activeTab === "tab2") loadTab2Data();
+        if (activeTab === "tab3") loadTab3Data();
+      }
+    }
+  } catch(e) {}
 }
 async function checkStockVersionSilently() {
   try {
@@ -543,6 +559,7 @@ function closeDrawer() {
   if (drawer) drawer.style.display = "none";
 }
 
+// [Part JS.1] confirmOrder：下單成功當下立即重設版本號並即刻重新載入
 async function confirmOrder() {
   let total = 0;
   const items = [];
@@ -568,10 +585,7 @@ async function confirmOrder() {
   const isLimited = isGuest || (userRole === "我只是來吃吃的");
 
   if (isLimited && total > 3) {
-    await appAlert(
-      "⚠️ 預訂限制提示：\n未登入訪客或「我只是來吃吃的」單次預訂不可超過 3 杯！\n若需無限制訂購，請點擊右上角 Google 登入升級為「大吃」。",
-      "預訂限制"
-    );
+    await appAlert("⚠️ 預訂限制提示：\n未登入訪客或「我只是來吃吃的」單次預訂不可超過 3 杯！\n若需無限制訂購，請登入升級為「大吃」。", "預訂限制");
     return;
   }
 
@@ -588,12 +602,19 @@ async function confirmOrder() {
         body: { action: "submitOrder", items, sheetName, week, deviceId }
       });
       if (submitBtn) submitBtn.innerText = "確認提交報名";
-      await appAlert("預訂成功！" + (isGuest ? "（已記錄訪客設備登記）" : "確認信件已發送至您的 Gmail。"), "預訂結果");
+      
+      // 關鍵：下單成功當下立即將前端本地快取版本清空，強迫下一次載入取得伺服器最新數據
+      localStockVersion = "";
       cart = {};
       updateFooterAndDrawer();
       closeDrawer();
-      loadProducts(sheetName, week);
+
+      await appAlert("預訂成功！" + (isGuest ? "（已記錄訪客設備登記）" : "確認信件已發送至您的 Gmail。"), "預訂結果");
+
+      // 0 秒即時渲染全新剩餘數目 (不再延遲一分鐘)
+      await loadProducts(sheetName, week);
       if (activeTab === "tab2") loadTab2Data();
+      if (activeTab === "tab3") loadTab3Data();
     } catch (err) {
       if (submitBtn) submitBtn.innerText = "確認提交報名";
       await appAlert("提交失敗：" + err.message, "錯誤");
