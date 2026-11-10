@@ -608,6 +608,21 @@ async function confirmOrder() {
       if (submitBtn) submitBtn.innerText = "確認提交報名";
 
       if (res.success) {
+        // [Part JS.1] 保存訂單至本機歷史記錄 (訪客與會員皆保存)
+        const orderHistory = JSON.parse(localStorage.getItem("cup_noodle_order_history") || "[]");
+        orderHistory.unshift({
+          id: res.orderId,
+          time: new Date().toLocaleString(),
+          user: userEmail || `未登入訪客 [${deviceId}]`,
+          deviceId: deviceId,
+          items: items,
+          totalCups: total,
+          week: week || currentActiveWeek,
+          sheetName: sheetName || currentActiveSheetName
+        });
+        localStorage.setItem("cup_noodle_order_history", JSON.stringify(orderHistory));
+
+        
         localStockVersion = "";
         cart = {};
         updateFooterAndDrawer();
@@ -1001,7 +1016,7 @@ function detectBarcodeStream(videoEl) {
     nativeDetector.detect(videoEl).then(barcodes => {
       if (barcodes && barcodes.length > 0 && isLiveScanning) {
         stopScanner();
-        onBarcodeScanned(barcodes[0].rawValue);
+        (barcodes[0].rawValue);
         return;
       }
       if (isLiveScanning) requestAnimationFrame(() => detectBarcodeStream(videoEl));
@@ -1038,14 +1053,24 @@ function stopScanner() {
   }
 }
 
+// ==========================================
+// [Part JS.5] [F_JS_05] 掃碼核銷與自訂備註傳送
+// ==========================================
 function onBarcodeScanned(code) {
+  // 1. 若掃描到取餐專用 QR Code (CNORDER:)
   if (code.indexOf("CNORDER:") === 0) {
     try {
       const jsonStr = code.substring(8);
       const order = JSON.parse(jsonStr);
       pendingOrderDeduct = order;
 
-      document.getElementById("deductModalTime").innerText = `訂單時間：${order.time}\n訂購人：${order.user}`;
+      // 明確展示是誰下單 (包含裝置數位憑證 DEV-XXXX-XXXX)
+      const placerIdentity = order.user || order.deviceId || "未知訪客";
+      document.getElementById("deductModalUser").innerText = placerIdentity;
+      document.getElementById("deductModalTime").innerText = order.time || "-";
+      document.getElementById("deductModalOrderId").innerText = order.id || "-";
+      document.getElementById("deductRemarkInput").value = ""; // 重置備註框
+
       const tbody = document.getElementById("deductModalList");
       let html = "";
       order.items.forEach(it => {
@@ -1060,6 +1085,7 @@ function onBarcodeScanned(code) {
     }
   }
 
+  // 2. 常規杯麵條碼...
   currentBarcode = code;
   const cleanTarget = cleanBarcode(code);
   const p = products.find(x => cleanBarcode(x.barcode) === cleanTarget && cleanTarget !== "");
@@ -1081,11 +1107,11 @@ function onBarcodeScanned(code) {
   }
   document.getElementById("scanModal").style.display = "flex";
 }
-
 async function executeOrderDeduct() {
   if (!pendingOrderDeduct) return;
   const btn = document.getElementById("btnConfirmDeduct");
-  btn.innerText = "⏳ 核銷中...";
+  btn.innerText = "⏳ 核銷扣減中...";
+  const remark = document.getElementById("deductRemarkInput").value.trim();
 
   try {
     const res = await apiRequest("", {
@@ -1093,24 +1119,26 @@ async function executeOrderDeduct() {
       body: {
         action: "deductOrder",
         orderPayload: pendingOrderDeduct,
+        remark: remark, // 攜帶核對員填寫的備註
         sheetName: currentActiveSheetName,
         week: currentActiveWeek
       }
     });
 
-    btn.innerText = "確認一鍵扣減";
+    btn.innerText = "確認一鍵扣減核銷";
     closeModal("orderDeductModal");
 
     if (res.success) {
-      await appAlert(`核銷成功！已從本週庫存自動扣減：\n${res.details.join("\n")}`, "核銷完成");
+      const who = pendingOrderDeduct.user || pendingOrderDeduct.deviceId || "顧客";
+      await appAlert(`✅ 核銷扣減成功！\n\n對象：${who}\n訂單號：${res.orderId}\n扣減明細：\n${res.details.join("\n")}${remark ? `\n已登記備註：${remark}` : ''}`, "核銷完成");
       loadProducts(currentActiveSheetName, currentActiveWeek);
       if (activeTab === "tab2") loadTab2Data();
       if (activeTab === "tab3") loadTab3Data();
     } else {
-      await appAlert(res.msg, "操作被拒");
+      await appAlert(res.msg, "核銷失敗");
     }
   } catch (e) {
-    btn.innerText = "確認一鍵扣減";
+    btn.innerText = "確認一鍵扣減核銷";
     await appAlert("核銷失敗: " + e.message, "伺服器錯誤");
   }
 }
@@ -1402,3 +1430,66 @@ window.addEventListener("DOMContentLoaded", () => {
   safeInitGIS();
   loadProducts(null, null);
 });
+
+// ==========================================
+// [Part JS.4] [F_JS_04] 預訂記錄彈窗與出示 QR Code
+// ==========================================
+function openOrderHistoryModal() {
+  document.getElementById("historyModalDeviceId").innerText = deviceId;
+  document.getElementById("historyModalUser").innerText = userEmail ? `${userEmail} (${userRole})` : "未登入訪客";
+
+  const history = JSON.parse(localStorage.getItem("cup_noodle_order_history") || "[]");
+  const container = document.getElementById("orderHistoryListContainer");
+
+  if (history.length === 0) {
+    container.innerHTML = `<div style="text-align:center; padding:30px 10px; color:#888;">本裝置尚無任何預訂記錄</div>`;
+  } else {
+    let html = "";
+    history.forEach(order => {
+      const itemsText = order.items.map(it => `${it.name} x${it.qty}`).join("、 ");
+      html += `
+        <div class="history-order-card" onclick="showOrderQrModal('${order.id}')">
+          <div class="history-order-header">
+            <span class="history-order-id">${order.id}</span>
+            <span class="history-order-time">${order.time}</span>
+          </div>
+          <div class="history-order-details">
+            <b>共 ${order.totalCups} 杯</b> | 明細：${itemsText}
+          </div>
+          <div style="text-align:right; margin-top:6px; font-size:11px; color:#1565c0; font-weight:bold;">
+            📱 點擊出示取餐 QR Code ❯
+          </div>
+        </div>
+      `;
+    });
+    container.innerHTML = html;
+  }
+
+  document.getElementById("orderHistoryModal").style.display = "flex";
+}
+
+// 點擊卡片彈出高解析取餐 QR Code
+function showOrderQrModal(orderId) {
+  const history = JSON.parse(localStorage.getItem("cup_noodle_order_history") || "[]");
+  const order = history.find(o => o.id === orderId);
+  if (!order) return;
+
+  const orderPayload = "CNORDER:" + JSON.stringify({
+    id: order.id,
+    time: order.time,
+    user: order.user,
+    deviceId: order.deviceId,
+    week: order.week,
+    items: order.items.map(it => ({ row: it.rowIndex, name: it.name, qty: it.qty }))
+  });
+
+  const qrUrl = "https://quickchart.io/qr?text=" + encodeURIComponent(orderPayload) + "&size=260&ecLevel=M";
+
+  document.getElementById("qrViewTitle").innerText = "🍜 現場取餐專用憑證";
+  document.getElementById("qrViewSubtitle").innerHTML = `訂單號：<b>${order.id}</b><br>憑證：${order.deviceId}`;
+  document.getElementById("qrViewImg").src = qrUrl;
+  document.getElementById("qrViewItemsList").innerHTML = order.items.map(it => `• ${it.name} x <b>${it.qty}</b>`).join("<br>");
+
+  document.getElementById("orderQrViewModal").style.display = "flex";
+}
+
