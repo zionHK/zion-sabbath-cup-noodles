@@ -74,6 +74,7 @@
 
   <!-- TAB 1 底部購物車 -->
   <div class="fixed-footer" id="tab1Footer">
+    <button class="btn-secondary" id="btnOpenOrderHistory" onclick="openOrderHistoryModal()">📋 預訂記錄</button>
     <div class="footer-total" id="footerTotal">已選：0 杯</div>
     <button class="btn-submit" id="btnOpenDrawer">明細與報名</button>
   </div>
@@ -309,12 +310,19 @@
   </div>
 
   <!-- 4. QR 取餐訂單核銷確認彈窗 -->
+  <!-- QR 取餐訂單智能核銷確認彈窗 (含下單者辨識與核銷備註) -->
   <div class="modal-overlay" id="orderDeductModal">
-    <div class="modal-box" style="max-width: 380px; text-align: left; padding: 22px 18px;">
+    <div class="modal-box" style="max-width: 400px; text-align: left; padding: 22px 18px;">
       <h4 style="font-size: 16px; margin-bottom: 4px; text-align: center; color: #1565c0;">📦 訂單取餐核銷確認</h4>
-      <p id="deductModalTime" style="font-size: 12px; color: #666; margin-bottom: 10px; text-align: center;"></p>
       
-      <div style="max-height: 220px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; margin-bottom: 12px;">
+      <!-- 訂單身分與憑證 -->
+      <div style="background: #eef2f6; border-radius: 6px; padding: 8px 12px; font-size: 12px; margin: 10px 0;">
+        <div><b>下單身分 / 憑證：</b><span id="deductModalUser" style="color:#1565c0; font-weight:bold; font-family:monospace;"></span></div>
+        <div><b>下單時間：</b><span id="deductModalTime"></span></div>
+        <div><b>訂單編號：</b><span id="deductModalOrderId" style="font-family:monospace;"></span></div>
+      </div>
+      
+      <div style="max-height: 180px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; margin-bottom: 12px;">
         <table class="report-table" style="font-size: 12px;">
           <thead>
             <tr><th style="text-align:left;">商品品項</th><th style="width: 50px;">取餐數</th></tr>
@@ -323,12 +331,19 @@
         </table>
       </div>
 
+      <!-- 核對員可填寫自訂備註 -->
+      <div style="margin-bottom: 14px;">
+        <label style="font-size: 12px; font-weight: bold; color: #444;">核銷備註 (選填，將記錄於 Log)：</label>
+        <input type="text" id="deductRemarkInput" placeholder="例如：本人親取、代領、現金已付等..." style="width: 100%; margin-top: 4px; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px;">
+      </div>
+
       <div class="modal-actions">
         <button class="btn-cancel" onclick="closeModal('orderDeductModal')">取消</button>
-        <button class="btn-confirm" id="btnConfirmDeduct" onclick="executeOrderDeduct()">確認一鍵扣減</button>
+        <button class="btn-confirm" id="btnConfirmDeduct" onclick="executeOrderDeduct()">確認一鍵扣減核銷</button>
       </div>
     </div>
   </div>
+
 
   <!-- 5. 既有彈窗 (商品詳情、條碼輸入、Tab 3 編輯、系統提示) -->
   <div class="modal-overlay" id="prodDetailModal">
@@ -385,6 +400,44 @@
       <h4 id="appDialogTitle" style="font-size: 16px; margin-bottom: 10px; color: #222;"></h4>
       <p id="appDialogMsg" style="font-size: 14px; color: #555; line-height: 1.6; margin-bottom: 8px;"></p>
       <div class="modal-actions" id="appDialogActions"></div>
+    </div>
+  </div>
+  <!-- 預訂記錄與裝置憑證彈窗 -->
+  <div class="modal-overlay" id="orderHistoryModal">
+    <div class="modal-box" style="max-width: 420px; text-align: left; max-height: 85vh; overflow-y: auto; padding: 22px 18px;">
+      <h4 style="font-size: 16px; margin-bottom: 4px; text-align: center; color: #1565c0;">📋 本機預訂記錄與取餐憑證</h4>
+      
+      <!-- 頂部裝置數位憑證與帳號展示卡 -->
+      <div style="background: #f0f7ff; border: 1px dashed #1565c0; border-radius: 8px; padding: 10px 12px; margin: 10px 0 14px 0; font-size: 12px;">
+        <div><b>裝置數位憑證：</b><span id="historyModalDeviceId" style="font-family: monospace; font-weight: bold; color: #1565c0;"></span></div>
+        <div style="margin-top: 3px;"><b>登入身分：</b><span id="historyModalUser"></span></div>
+        <div style="color: #666; font-size: 11px; margin-top: 4px;">點擊下方任一訂單，可直接出示取餐專用 QR Code 供現場核銷。</div>
+      </div>
+
+      <!-- 訂單清單容器 -->
+      <div id="orderHistoryListContainer"></div>
+
+      <div class="modal-actions" style="margin-top: 14px;">
+        <button class="btn-cancel" onclick="closeModal('orderHistoryModal')" style="width: 100%;">關閉</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 點擊歷史訂單彈出的專屬取餐 QR 彈窗 -->
+  <div class="modal-overlay" id="orderQrViewModal">
+    <div class="modal-box" style="max-width: 350px; text-align: center; padding: 22px 18px;">
+      <h4 id="qrViewTitle" style="font-size: 16px; color: #1565c0; margin-bottom: 4px;"></h4>
+      <p id="qrViewSubtitle" style="font-size: 12px; color: #666; margin-bottom: 12px;"></p>
+      
+      <div style="display: inline-block; padding: 8px; background: #fff; border: 1px solid #eee; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 12px;">
+        <img id="qrViewImg" src="" style="width: 220px; height: 220px; display: block;">
+      </div>
+
+      <div id="qrViewItemsList" style="font-size: 12px; color: #444; background: #f8f9fa; padding: 8px 12px; border-radius: 6px; text-align: left; max-height: 120px; overflow-y: auto; margin-bottom: 14px;"></div>
+
+      <div class="modal-actions">
+        <button class="btn-confirm" onclick="closeModal('orderQrViewModal')" style="width: 100%;">關閉條碼</button>
+      </div>
     </div>
   </div>
 
