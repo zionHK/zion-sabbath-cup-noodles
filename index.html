@@ -74,9 +74,13 @@
 
   <!-- TAB 1 底部購物車 -->
   <div class="fixed-footer" id="tab1Footer">
-    <button class="btn-secondary" id="btnOpenOrderHistory" onclick="openOrderHistoryModal()">📋 預訂記錄</button>
+<!-- 左側：已選杯數總計 -->
     <div class="footer-total" id="footerTotal">已選：0 杯</div>
-    <button class="btn-submit" id="btnOpenDrawer">明細與報名</button>
+
+    <!-- 右側按鈕群：[📋 預訂記錄] 位於 [明細與報名] 的左邊 -->
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <button class="btn-secondary" id="btnOpenOrderHistory" onclick="openOrderHistoryModal()">📋 預訂記錄</button>
+      <button class="btn-submit" id="btnOpenDrawer">明細與報名</button>
   </div>
   <div class="drawer" id="cartDrawer">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
