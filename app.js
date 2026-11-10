@@ -286,6 +286,7 @@ function setupTabs() {
   });
 }
 
+// 3. 切換 Tab 時自動無感同步最新庫存
 function switchTab(tabId) {
   document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
   document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
@@ -303,9 +304,12 @@ function switchTab(tabId) {
   const footer = document.getElementById("tab1Footer");
   if (footer) footer.style.display = isTab1 ? "flex" : "none";
 
+  // 切換分頁時，自動無感拉取最新庫存，無需手動 F5
+  if (tabId === "tab1") loadProducts(currentActiveSheetName, currentActiveWeek);
   if (tabId === "tab2") loadTab2Data();
   if (tabId === "tab3") loadTab3Data();
 }
+
 
 function onPageSizeChange() {
   pageSize = Number(document.getElementById("pageSizeSelect").value);
@@ -322,7 +326,10 @@ function onSheetOrWeekChange() {
   if (activeTab === "tab2") loadTab2Data();
   if (activeTab === "tab3") loadTab3Data();
 }
-
+// 1. 全域版本號追蹤
+let localStockVersion = "";
+let stockSyncTimer = null;
+// 2. 修正 loadProducts：保證 Tab 1 與 Tab 2 永遠使用同一個月份與週次
 async function loadProducts(targetSheet, targetWeek) {
   const grid = document.getElementById("gridContainer");
   if (grid && products.length === 0) {
@@ -340,22 +347,12 @@ async function loadProducts(targetSheet, targetWeek) {
     }
 
     products = res.products || [];
-    if (res.userRole) {
-      userRole = res.userRole;
-      localStorage.setItem("cup_noodle_user_role", userRole);
-    }
-    if (res.userEmail) {
-      userEmail = res.userEmail;
-      localStorage.setItem("cup_noodle_user_email", userEmail);
-    }
     if (res.sheetName) currentActiveSheetName = res.sheetName;
     if (res.currentWeek) currentActiveWeek = res.currentWeek;
 
-    renderUserStatus();
-    setupPermissions();
-
+    // 強制同步更新控制列的下拉選單選取值，確保 Tab 1 與 Tab 2 完全一致
     const sel = document.getElementById("sheetSelect");
-    if (sel && sel.children.length === 0 && res.sheets) {
+    if (sel && res.sheets) {
       sel.innerHTML = "";
       res.sheets.forEach(s => {
         const opt = document.createElement("option");
@@ -364,6 +361,7 @@ async function loadProducts(targetSheet, targetWeek) {
         if (s === res.sheetName) opt.selected = true;
         sel.appendChild(opt);
       });
+      sel.value = res.sheetName;
     }
     const sheetTxt = document.getElementById("sheetText");
     if (sheetTxt && res.sheetName) sheetTxt.innerText = res.sheetName.replace("杯麵每週訂購與統計表", "");
@@ -376,12 +374,10 @@ async function loadProducts(targetSheet, targetWeek) {
     }
 
     renderGrid();
-    if (activeTab === "tab3") loadTab3Data();
   } catch (err) {
     if (grid) grid.innerHTML = `<p style='grid-column:1/-1; text-align:center; color:#d32f2f; padding:40px;'>載入失敗：${err.message}</p>`;
   }
 }
-
 function onFilterChange() {
   currentPage = 1;
   renderGrid();
@@ -487,10 +483,60 @@ function updateFooterAndDrawer() {
   document.getElementById("drawerList").innerHTML = listHtml || "<p style='color:#999; text-align:center;'>尚未選擇任何商品</p>";
 }
 
-document.getElementById("btnOpenDrawer").onclick = () => {
+// 4. 打開購物車明細時，先進行即時庫存校驗
+document.getElementById("btnOpenDrawer").onclick = async () => {
   const drawer = document.getElementById("cartDrawer");
+  if (drawer.style.display !== "block") {
+    // 打開前無感檢查一次最新現貨
+    await checkStockVersionSilently();
+  }
   drawer.style.display = (drawer.style.display === "block") ? "none" : "block";
 };
+// 5. 前端智慧無感即時同步探針 (極省資源)
+function initRealtimeStockSync() {
+  // 每 10 秒檢查一次版本號 (僅在畫面處於前景時執行，背景休眠 0 消耗)
+  if (stockSyncTimer) clearInterval(stockSyncTimer);
+  stockSyncTimer = setInterval(() => {
+    if (!document.hidden) {
+      checkStockVersionSilently();
+    }
+  }, 10000);
+
+  // 當使用者喚醒手機或切回瀏覽器視窗時，立即檢查一次
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      checkStockVersionSilently();
+    }
+  });
+}
+async function checkStockVersionSilently() {
+  try {
+    const res = await apiRequest("?action=checkVersion");
+    if (res && res.version) {
+      if (!localStockVersion) {
+        localStockVersion = res.version;
+      } else if (localStockVersion !== res.version) {
+        // 發現伺服器庫存版本更新（代表其他人剛下了單或核銷了庫存）
+        localStockVersion = res.version;
+        // 背景無感刷新商品列表，使用者畫面上數量自動即時跳動
+        loadProducts(currentActiveSheetName, currentActiveWeek);
+        if (activeTab === "tab2") loadTab2Data();
+        if (activeTab === "tab3") loadTab3Data();
+      }
+    }
+  } catch(e) {}
+}
+
+// 在 DOMContentLoaded 最後啟動同步探針：
+window.addEventListener("DOMContentLoaded", () => {
+  renderUserStatus();
+  setupTabs();
+  setupPermissions();
+  setupBarcodeInput();
+  safeInitGIS();
+  loadProducts(null, null);
+  initRealtimeStockSync(); // 啟動無感即時同步
+});
 
 function closeDrawer() {
   const drawer = document.getElementById("cartDrawer");
