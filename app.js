@@ -508,6 +508,121 @@ function initRealtimeStockSync() {
     }
   });
 }
+// ==========================================
+// [Part JS.3] [F_JS_01] 購物車數量調整 (嚴格限制不得超過現貨剩餘)
+// ==========================================
+async function updateQty(rowId, delta) {
+  const p = products.find(x => x.rowIndex == rowId);
+  const maxStock = p ? (Number(p.remain) || 0) : 0;
+  const current = cart[rowId] || 0;
+  const next = current + delta;
+
+  // 1. 現貨為 0 時禁止選購
+  if (maxStock <= 0 && delta > 0) {
+    await appAlert(`【${p.fullName}】目前現貨為 0 杯，暫不開放登記！`, "現貨不足");
+    return;
+  }
+
+  // 2. 核心防線：點選數量嚴格不得超過該品項可用現貨
+  if (delta > 0 && next > maxStock) {
+    await appAlert(`【${p.fullName}】目前現貨僅剩 ${maxStock} 杯！\n無法選擇超過現貨之數量。`, "數量上限提示");
+    return;
+  }
+
+  // 3. 減至 0 的確認
+  if (current === 1 && delta === -1) {
+    const ok = await appConfirm("確定要將數量減至 0 並從預訂清單中移除嗎？", "清單調整");
+    if (!ok) return;
+  }
+
+  if (next <= 0) {
+    delete cart[rowId];
+  } else {
+    cart[rowId] = next;
+  }
+
+  const el = document.getElementById("qty-" + rowId);
+  if (el) el.innerText = cart[rowId] || 0;
+  updateFooterAndDrawer();
+}
+
+// ==========================================
+// [Part JS.3] [F_JS_02] 訂單送出前雙重校驗
+// ==========================================
+async function confirmOrder() {
+  let total = 0;
+  const items = [];
+
+  for (const r in cart) {
+    const p = products.find(x => x.rowIndex == r);
+    if (p) {
+      const maxStock = Number(p.remain) || 0;
+      // 送出前最後防禦：確認無超賣
+      if (cart[r] > maxStock) {
+        await appAlert(`【${p.fullName}】選擇數量 (${cart[r]} 杯) 已超過可用現貨 (${maxStock} 杯)！\n請重新調整數量後再提交。`, "庫存不足");
+        return;
+      }
+
+      total += cart[r];
+      items.push({ 
+        rowIndex: r, 
+        name: p.fullName, 
+        qty: cart[r], 
+        price: p.price || 0,
+        imgUrl: p.imgUrl || "" 
+      });
+    }
+  }
+
+  if (total === 0) {
+    await appAlert("請至少選擇 1 杯麵！", "提示");
+    return;
+  }
+
+  const isGuest = (!userEmail || userEmail === "" || userEmail.indexOf("@") === -1);
+  const isLimited = isGuest || (userRole === "我只是來吃吃的");
+
+  if (isLimited && total > 3) {
+    await appAlert("⚠️ 預訂限制提示：\n未登入訪客或「我只是來吃吃的」單次預訂不可超過 3 杯！\n若需無限制訂購，請登入升級為「大吃」。", "預訂限制");
+    return;
+  }
+
+  const ok = await appConfirm(`確認提交預訂共 ${total} 杯？`, "確認預訂");
+  if (ok) {
+    const sheetName = currentActiveSheetName || null;
+    const week = currentActiveWeek || null;
+    const submitBtn = document.querySelector("#cartDrawer .btn-submit");
+    if (submitBtn) submitBtn.innerText = "⏳ 提交中...";
+
+    try {
+      const res = await apiRequest("", {
+        method: "POST",
+        body: { action: "submitOrder", items, sheetName, week, deviceId }
+      });
+      if (submitBtn) submitBtn.innerText = "確認提交報名";
+
+      if (res.success) {
+        localStockVersion = "";
+        cart = {};
+        updateFooterAndDrawer();
+        closeDrawer();
+
+        await appAlert("預訂成功！" + (isGuest ? "（已記錄訪客設備登記）" : "確認信件已發送至您的 Gmail。"), "預訂結果");
+
+        await loadProducts(sheetName, week);
+        if (activeTab === "tab2") loadTab2Data();
+        if (activeTab === "tab3") loadTab3Data();
+      } else {
+        // 後端庫存校驗失敗攔截 (例如剛好被其他人搶先買走)
+        await appAlert(res.msg, "訂購失敗");
+        await loadProducts(sheetName, week);
+      }
+    } catch (err) {
+      if (submitBtn) submitBtn.innerText = "確認提交報名";
+      await appAlert("提交失敗：" + err.message, "錯誤");
+    }
+  }
+}
 
 async function checkStockVersionSilently() {
   try {
