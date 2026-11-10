@@ -383,6 +383,9 @@ function onFilterChange() {
   renderGrid();
 }
 
+// ==========================================
+// [Part JS.2] [F_JS_01] 卡片網格渲染 (庫存為 0 時禁用增加按鈕)
+// ==========================================
 function renderGrid() {
   let totalStock = 0;
   products.forEach(p => { totalStock += (Number(p.remain) || 0); });
@@ -405,9 +408,14 @@ function renderGrid() {
   pageItems.forEach(p => {
     const card = document.createElement("div");
     card.className = "card";
-    const stockHtml = p.remain > 0
+    const isOutOfStock = (p.remain <= 0);
+
+    const stockHtml = !isOutOfStock
       ? `<div class="stock-tag in-stock">現貨：${p.remain} 杯</div>`
-      : '<div class="stock-tag preorder">需預訂 (現貨 0)</div>';
+      : '<div class="stock-tag preorder" style="color:#d32f2f; background:#ffebee;">已售罄 (現貨 0)</div>';
+
+    // 核心修正：庫存為 0 時，+ 按鈕直接 disabled，徹底防止點選
+    const disablePlus = isOutOfStock ? 'disabled style="opacity:0.3; cursor:not-allowed;"' : '';
 
     card.innerHTML =
       `<div class="img-box" onclick="showProductDetail(${p.rowIndex})"><img src="${p.imgUrl || 'https://via.placeholder.com/90?text=CupNoodle'}" loading="lazy" alt="${p.name}"></div>
@@ -416,7 +424,7 @@ function renderGrid() {
       <div class="stepper">
         <button onclick="updateQty(${p.rowIndex}, -1)">-</button>
         <div class="val" id="qty-${p.rowIndex}">${cart[p.rowIndex] || 0}</div>
-        <button onclick="updateQty(${p.rowIndex}, 1)">+</button>
+        <button onclick="updateQty(${p.rowIndex}, 1)" ${disablePlus}>+</button>
       </div>`;
     grid.appendChild(card);
   });
@@ -461,37 +469,36 @@ async function updateQty(rowId, delta) {
   updateFooterAndDrawer();
 }
 
+// ==========================================
+// [Part JS.3] [F_JS_02] 抽屜清單渲染 (強制置右且美觀)
+// ==========================================
 function updateFooterAndDrawer() {
   let total = 0;
   let listHtml = "";
+
   for (const rId in cart) {
     const p = products.find(x => x.rowIndex == rId);
     if (p) {
       total += cart[rId];
+      const maxStock = Number(p.remain) || 0;
+      const disablePlus = (cart[rId] >= maxStock) ? 'disabled style="opacity:0.3; cursor:not-allowed;"' : '';
+
       listHtml +=
         `<div class="drawer-item">
-          <div>${p.fullName}</div>
-          <div class="stepper">
+          <div class="drawer-item-title">${p.fullName}</div>
+          <div class="drawer-stepper">
             <button onclick="updateQty(${p.rowIndex}, -1)">-</button>
             <div class="val">${cart[rId]}</div>
-            <button onclick="updateQty(${p.rowIndex}, 1)">+</button>
+            <button onclick="updateQty(${p.rowIndex}, 1)" ${disablePlus}>+</button>
           </div>
         </div>`;
     }
   }
+
   document.getElementById("footerTotal").innerText = `已選：${total} 杯`;
-  document.getElementById("drawerList").innerHTML = listHtml || "<p style='color:#999; text-align:center;'>尚未選擇任何商品</p>";
+  document.getElementById("drawerList").innerHTML = listHtml || "<p style='color:#999; text-align:center; padding:20px 0;'>尚未選擇任何商品</p>";
 }
 
-// 4. 打開購物車明細時，先進行即時庫存校驗
-document.getElementById("btnOpenDrawer").onclick = async () => {
-  const drawer = document.getElementById("cartDrawer");
-  if (drawer.style.display !== "block") {
-    // 打開前無感檢查一次最新現貨
-    await checkStockVersionSilently();
-  }
-  drawer.style.display = (drawer.style.display === "block") ? "none" : "block";
-};
 // 5. 前端智慧無感即時同步探針 (極省資源)
 // [Part JS.2] 輕量背景即時同步探針 (縮短至 5 秒檢測，喚醒視窗即刻同步)
 function initRealtimeStockSync() {
@@ -509,7 +516,7 @@ function initRealtimeStockSync() {
   });
 }
 // ==========================================
-// [Part JS.3] [F_JS_01] 購物車數量調整 (嚴格限制不得超過現貨剩餘)
+// [Part JS.3] [F_JS_03] 數量增減與上限攔截
 // ==========================================
 async function updateQty(rowId, delta) {
   const p = products.find(x => x.rowIndex == rowId);
@@ -517,19 +524,18 @@ async function updateQty(rowId, delta) {
   const current = cart[rowId] || 0;
   const next = current + delta;
 
-  // 1. 現貨為 0 時禁止選購
+  // 1. 庫存為 0 時阻擋
   if (maxStock <= 0 && delta > 0) {
-    await appAlert(`【${p.fullName}】目前現貨為 0 杯，暫不開放登記！`, "現貨不足");
+    await appAlert(`【${p.fullName}】目前現貨為 0 杯，無法選購！`, "現貨不足");
     return;
   }
 
-  // 2. 核心防線：點選數量嚴格不得超過該品項可用現貨
+  // 2. 超過可用現貨時阻擋
   if (delta > 0 && next > maxStock) {
-    await appAlert(`【${p.fullName}】目前現貨僅剩 ${maxStock} 杯！\n無法選擇超過現貨之數量。`, "數量上限提示");
+    await appAlert(`【${p.fullName}】目前現貨僅剩 ${maxStock} 杯，無法登記更多！`, "數量上限提示");
     return;
   }
 
-  // 3. 減至 0 的確認
   if (current === 1 && delta === -1) {
     const ok = await appConfirm("確定要將數量減至 0 並從預訂清單中移除嗎？", "清單調整");
     if (!ok) return;
